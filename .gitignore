@@ -1,2 +1,13 @@
+# Python 缓存
 __pycache__/
 *.pyc
+
+# Conda 环境
+envs/
+.conda/
+
+# 环境配置
+.env
+
+# IDE 配置
+.idea/
