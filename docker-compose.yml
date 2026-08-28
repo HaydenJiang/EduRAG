@@ -1,0 +1,87 @@
+services:
+  # 1. Etcd Milvus元数据存储
+  etcd:
+    container_name: edurag-etcd
+    env_file: .env
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ./volumes/etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://0.0.0.0:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # 2. MinIO 对象存储（Milvus底层存储文件）
+  minio:
+    container_name: edurag-minio
+    env_file: .env
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    ports:
+      - "9000:9000"  # API访问端口
+      - "9001:9001"  # Web管理控制台端口
+    volumes:
+      - ./volumes/minio_data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # 3. Milvus 2.4 单机向量数据库
+  milvus:
+    container_name: edurag-milvus
+    env_file: .env
+    image: milvusdb/milvus:v2.4.4
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      # Milvus向量引擎需要特殊系统调用，关闭seccomp避免启动失败
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ./volumes/milvus_data:/var/lib/milvus
+    ports:
+      - "19530:19530"  # Python SDK连接端口
+      - "9091:9091"    # Milvus健康检查/监控端口
+    depends_on:
+      - etcd
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # 4. Redis 缓存
+  redis:
+    container_name: edurag-redis
+    env_file: .env
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./volumes/redis_data:/data
+    command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD}"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
+networks:
+  default:
+    name: edurag-network

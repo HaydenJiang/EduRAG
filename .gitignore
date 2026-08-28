@@ -8,6 +8,15 @@ envs/
 
 # 环境配置
 .env
+*.env
+./models/*
+./volumes/*
 
 # IDE 配置
 .idea/
+
+# 日志
+*.log
+
+# 虚拟环境
+venv/
